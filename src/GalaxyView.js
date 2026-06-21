@@ -1,8 +1,6 @@
 /**
  * GalaxyView
  * Renders and manages the 2D galaxy network view
- * FIX #1: Proper raycasting and interaction
- * FIX #3: Visibility filtering for fog of war
  */
 class GalaxyView {
   constructor(canvas, gameState) {
@@ -22,7 +20,6 @@ class GalaxyView {
     this.hoveredPlanet = null;
     this.camera = { x: 0, y: 0, zoom: 1 };
     
-    // FIX #1: Store clickable planet regions for raycasting
     this.planetBounds = []; // { id, x, y, radius }
     
     this.setupEventListeners();
@@ -34,38 +31,31 @@ class GalaxyView {
     window.addEventListener('resize', () => this.handleResize());
   }
 
-  /**
-   * FIX #1: Proper raycasting for planet clicks
-   * Check if click intersects with any planet's clickable region
-   */
   handleClick(e) {
+    if (this.gameState.view !== 'galaxy') return;
+
     const rect = this.canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    // Check all planet bounds
     for (const bound of this.planetBounds) {
       const dist = Math.hypot(
         bound.screenX - clickX,
         bound.screenY - clickY
       );
 
-      if (dist < bound.screenRadius + 10) { // 10px click tolerance
+      if (dist < bound.screenRadius + 10) { 
         this.selectedPlanet = bound.id;
         this.gameState.selectedPlanetId = bound.id;
-        // Trigger zoom if not already in planet view
-        if (this.gameState.view === 'galaxy') {
-          window.gameInstance?.zoom();
-        }
+        window.gameInstance?.zoom();
         return;
       }
     }
   }
 
-  /**
-   * FIX #1: Hover detection using stored bounds
-   */
   handleMouseMove(e) {
+    if (this.gameState.view !== 'galaxy') return;
+
     const rect = this.canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -94,28 +84,21 @@ class GalaxyView {
     this.ctx.scale(devicePixelRatio, devicePixelRatio);
   }
 
-  /**
-   * Draw the galaxy view
-   * FIX #3: Only render planets that are scanned/visible
-   */
   render() {
     const ctx = this.ctx;
     
-    // Clear
     ctx.fillStyle = '#0a1628';
     ctx.fillRect(0, 0, this.width, this.height);
 
-    // FIX #3: Get only visible planets
     const visiblePlanets = this.gameState.getVisiblePlanets();
 
     ctx.save();
     ctx.translate(this.width / 2, this.height / 2);
     ctx.scale(this.camera.zoom, this.camera.zoom);
 
-    // Clear bounds for new frame
     this.planetBounds = [];
 
-    // Draw connection lines between visible planets
+    // Connections
     ctx.strokeStyle = 'rgba(100, 150, 200, 0.15)';
     ctx.lineWidth = 1;
     for (let i = 0; i < visiblePlanets.length; i++) {
@@ -127,17 +110,15 @@ class GalaxyView {
       ctx.stroke();
     }
 
-    // Draw visible planets
+    // Planets
     for (const planet of visiblePlanets) {
       const isSelected = this.selectedPlanet === planet.id;
       const isHovered = this.hoveredPlanet === planet.id;
       
-      // Convert world coords to screen coords for raycasting
       const screenX = this.width / 2 + (planet.x * this.camera.zoom);
       const screenY = this.height / 2 + (planet.y * this.camera.zoom);
       const screenRadius = (isSelected ? 12 : 8) * this.camera.zoom;
 
-      // FIX #1: Store planet bounds for raycasting
       this.planetBounds.push({
         id: planet.id,
         screenX: screenX,
@@ -145,7 +126,6 @@ class GalaxyView {
         screenRadius: screenRadius
       });
 
-      // Planet glow
       if (isHovered || isSelected) {
         ctx.fillStyle = `rgba(100, 180, 255, ${isSelected ? 0.4 : 0.2})`;
         ctx.beginPath();
@@ -153,20 +133,17 @@ class GalaxyView {
         ctx.fill();
       }
 
-      // Planet body
       ctx.fillStyle = isSelected ? '#64b5f6' : '#4a9fd8';
       ctx.beginPath();
       ctx.arc(planet.x, planet.y, isSelected ? 12 : 8, 0, Math.PI * 2);
       ctx.fill();
 
-      // Planet border
       if (isSelected) {
         ctx.strokeStyle = '#64b5f6';
         ctx.lineWidth = 2;
         ctx.stroke();
       }
 
-      // Visited indicator
       if (planet.visited) {
         ctx.strokeStyle = 'rgba(100, 180, 255, 0.6)';
         ctx.lineWidth = 1;
@@ -175,7 +152,6 @@ class GalaxyView {
         ctx.stroke();
       }
 
-      // Starter planet indicator
       if (planet.id === this.gameState.starterPlanetId) {
         ctx.strokeStyle = 'rgba(76, 175, 80, 0.8)';
         ctx.lineWidth = 2;
@@ -185,7 +161,7 @@ class GalaxyView {
       }
     }
 
-    // FIX #3: Draw radar range if built
+    // Radar Radius visualizer
     if (this.gameState.radarBuilt) {
       const starterPlanet = this.gameState.planets[this.gameState.starterPlanetId];
       ctx.strokeStyle = 'rgba(100, 150, 200, 0.1)';
@@ -199,7 +175,7 @@ class GalaxyView {
 
     ctx.restore();
 
-    // Draw center indicator
+    // Crosshair
     ctx.strokeStyle = 'rgba(100, 150, 200, 0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -209,7 +185,6 @@ class GalaxyView {
     ctx.lineTo(this.width / 2, this.height / 2 + 10);
     ctx.stroke();
 
-    // FIX #3: Draw fog of war message if no radar
     if (!this.gameState.radarBuilt && visiblePlanets.length === 1) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.font = '14px monospace';
