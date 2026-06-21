@@ -2,7 +2,10 @@ import GameState from './GameState.js';
 import GalaxyView from './GalaxyView.js';
 import PlanetView from './PlanetView.js';
 
-const DRILL_ENERGY_COST = 20;
+const COSTS = {
+  drill:       { energy: 20 },
+  solarPanel:  { copper: 5 },
+};
 
 class Game {
   constructor() {
@@ -12,19 +15,17 @@ class Game {
     this.galaxyView = new GalaxyView(this.canvas, this.gameState);
     this.planetView = new PlanetView(this.canvas, this.gameState);
 
-    this.zoomBtn = document.getElementById('zoom-btn');
-    this.backBtn = document.getElementById('back-btn');
     this.resourceDisplay = document.getElementById('resource-display');
-    this.hudLocation = document.getElementById('hud-location');
-    this.infoFps = document.getElementById('info-fps');
-    this.infoEntities = document.getElementById('info-entities');
+    this.hudLocation     = document.getElementById('hud-location');
+    this.infoFps         = document.getElementById('info-fps');
+    this.infoEntities    = document.getElementById('info-entities');
 
-    this.fpsCounter = 0;
+    this.fpsCounter    = 0;
     this.lastFpsUpdate = Date.now();
+    this._pendingNodeMesh = null;
+    this._pendingSlotType = null;
 
-    // Attach to window so PlanetView and HTML can call it
     window.gameInstance = this;
-
     this.init();
   }
 
@@ -33,104 +34,105 @@ class Game {
     this.updateHUD();
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        this.closeBuildMenu();
-        this.back();
-      }
+      if (e.key === 'Escape') { this.closeBuildMenu(); this.back(); }
     });
 
-    // Close confirm panel when clicking outside it
-    document.addEventListener('click', (e) => {
-      const buildPanel = document.getElementById('build-panel');
-      if (buildPanel && !e.target.closest('#build-panel')) {
-        this.closeBuildMenu();
-      }
+    // Close panel on left-click outside — but NOT on right-click
+    // (right-click opens a new menu at the new position)
+    document.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // only left-click closes
+      const panel = document.getElementById('build-panel');
+      if (panel && !e.target.closest('#build-panel')) this.closeBuildMenu();
     });
 
     this.gameLoop();
   }
 
   zoom() {
-    if (this.gameState.selectedPlanetId !== null) {
-      this.renderPlanet();
-    }
+    if (this.gameState.selectedPlanetId !== null) this.renderPlanet();
   }
 
-  // ─── Build menu (confirm dialog) ─────────────────────────────────────────
+  // ─── Build menu ───────────────────────────────────────────────────────────
 
-  openBuildMenu(screenX, screenY, nodeMesh) {
-    const panel = document.getElementById('build-panel');
+  /**
+   * slotType: 'ore' | 'empty'
+   */
+  openBuildMenu(screenX, screenY, mesh, slotType) {
+    const panel     = document.getElementById('build-panel');
     const container = document.getElementById('build-options-container');
-    const title = document.getElementById('build-target-name');
-
+    const title     = document.getElementById('build-target-name');
     if (!panel || !container || !title) return;
 
-    // Store reference so the confirm button can access it
-    this._pendingNodeMesh = nodeMesh;
+    this._pendingNodeMesh = mesh;
+    this._pendingSlotType = slotType;
+    container.innerHTML  = '';
 
-    const oreName = nodeMesh.userData.ore
-      ? nodeMesh.userData.ore.charAt(0).toUpperCase() + nodeMesh.userData.ore.slice(1)
-      : 'Unknown';
+    if (slotType === 'ore') {
+      const oreName = mesh.userData.ore
+        ? mesh.userData.ore.charAt(0).toUpperCase() + mesh.userData.ore.slice(1)
+        : 'Unknown';
+      title.innerText = `${oreName} Deposit`;
 
-    title.innerText = `${oreName} Deposit`;
+      this._addInfoLine(container, `Produces +1 ${oreName} every 5 sec`);
+      this._addBuildButton(container, {
+        label:    `⚙ Drill  (${COSTS.drill.energy} ⚡)`,
+        canAfford: this.gameState.inventory.energy >= COSTS.drill.energy,
+        reason:   `Need ${COSTS.drill.energy} ⚡`,
+        onConfirm: () => {
+          this.gameState.inventory.energy -= COSTS.drill.energy;
+          this.planetView.buildDrillVisual(mesh);
+        },
+      });
 
-    container.innerHTML = '';
+    } else {
+      title.innerText = 'Empty Vertex';
+      this._addInfoLine(container, `Recharges +2 ⚡ every 3 sec`);
+      this._addBuildButton(container, {
+        label:    `☀ Solar Panel  (${COSTS.solarPanel.copper} Cu)`,
+        canAfford: this.gameState.inventory.copper >= COSTS.solarPanel.copper,
+        reason:   `Need ${COSTS.solarPanel.copper} Cu`,
+        onConfirm: () => {
+          this.gameState.inventory.copper -= COSTS.solarPanel.copper;
+          this.planetView.buildSolarPanelVisual(mesh);
+        },
+      });
+    }
 
-    // Info line
-    const info = document.createElement('p');
-    info.className = 'build-info';
-    info.textContent = `Drill yields +1 ${oreName} every 5 sec`;
-    container.appendChild(info);
-
-    // Energy check
-    const canAfford = this.gameState.inventory.energy >= DRILL_ENERGY_COST;
-
-    const btn = document.createElement('button');
-    btn.className = 'build-option';
-    btn.disabled = !canAfford;
-    btn.textContent = canAfford
-      ? `⚙ Build Drill  (${DRILL_ENERGY_COST} Energy)`
-      : `✗ Need ${DRILL_ENERGY_COST} Energy  (have ${this.gameState.inventory.energy})`;
-
-    btn.onclick = (e) => {
-      e.stopPropagation(); // don't immediately re-close via document listener
-      this.confirmBuildDrill();
-    };
-
-    container.appendChild(btn);
-
-    // Position panel near click, keep it on screen
-    const panelWidth = 200;
-    const panelHeight = 110;
-    const left = Math.min(screenX + 12, window.innerWidth - panelWidth - 8);
-    const top  = Math.min(screenY + 12, window.innerHeight - panelHeight - 8);
-
-    panel.style.left = `${left}px`;
-    panel.style.top  = `${top}px`;
+    // Position panel, keep it on-screen
+    const left = Math.min(screenX + 12, window.innerWidth  - 220);
+    const top  = Math.min(screenY + 12, window.innerHeight - 140);
+    panel.style.left    = `${left}px`;
+    panel.style.top     = `${top}px`;
     panel.style.display = 'block';
   }
 
-  confirmBuildDrill() {
-    const nodeMesh = this._pendingNodeMesh;
-    if (!nodeMesh) return;
+  _addInfoLine(container, text) {
+    const p = document.createElement('p');
+    p.className   = 'build-info';
+    p.textContent = text;
+    container.appendChild(p);
+  }
 
-    if (this.gameState.inventory.energy < DRILL_ENERGY_COST) {
-      return; // double-guard (button should already be disabled)
-    }
-
-    this.closeBuildMenu();
-
-    this.gameState.inventory.energy -= DRILL_ENERGY_COST;
-    this.planetView.buildDrillVisual(nodeMesh);
-    this.updateHUD();
-
-    this._pendingNodeMesh = null;
+  _addBuildButton(container, { label, canAfford, reason, onConfirm }) {
+    const btn = document.createElement('button');
+    btn.className = 'build-option';
+    btn.disabled  = !canAfford;
+    btn.textContent = canAfford ? label : `✗ ${reason}`;
+    btn.onmousedown = (e) => e.stopPropagation(); // don't trigger panel-close
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      this.closeBuildMenu();
+      onConfirm();
+      this.updateHUD();
+    };
+    container.appendChild(btn);
   }
 
   closeBuildMenu() {
     const panel = document.getElementById('build-panel');
     if (panel) panel.style.display = 'none';
     this._pendingNodeMesh = null;
+    this._pendingSlotType = null;
   }
 
   // ─── Game loop ────────────────────────────────────────────────────────────
@@ -141,8 +143,6 @@ class Game {
     this.updateHUD();
     this.updateFPS();
   }
-
-  // ─── View transitions ─────────────────────────────────────────────────────
 
   renderPlanet() {
     this.gameState.view = 'planet';
@@ -163,11 +163,11 @@ class Game {
     const inv = this.gameState.inventory;
     this.resourceDisplay.innerHTML = `
       ⚡ ${inv.energy}/${inv.maxEnergy} &nbsp;|&nbsp;
-      Fe ${inv.iron} &nbsp;
-      Cu ${inv.copper} &nbsp;
-      Au ${inv.gold} &nbsp;
-      Li ${inv.lithium} &nbsp;
-      Pt ${inv.platinum}
+      Fe&nbsp;${inv.iron} &nbsp;
+      Cu&nbsp;${inv.copper} &nbsp;
+      Au&nbsp;${inv.gold} &nbsp;
+      Li&nbsp;${inv.lithium} &nbsp;
+      Pt&nbsp;${inv.platinum}
     `;
   }
 
@@ -176,7 +176,7 @@ class Game {
     const now = Date.now();
     if (now - this.lastFpsUpdate >= 1000) {
       if (this.infoFps) this.infoFps.textContent = `FPS: ${this.fpsCounter}`;
-      this.fpsCounter = 0;
+      this.fpsCounter    = 0;
       this.lastFpsUpdate = now;
     }
   }

@@ -10,6 +10,10 @@
       padding: 0;
       box-sizing: border-box;
     }
+    html, body {
+      width: 100%;
+      height: 100%;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background: #0a1628;
@@ -18,8 +22,8 @@
     }
     #canvas {
       display: block;
-      width: 100vw;
-      height: 100vh;
+      width: 100%;
+      height: 100%;
     }
     #hud {
       position: fixed;
@@ -125,6 +129,34 @@
     <button id="back-btn" onclick="window.gameInstance.back()" style="display: none;">Back to Galaxy</button>
     <button id="help-btn" onclick="alert('Click planets to select, then zoom in.\nClick ore nodes to mine.\nE = toggle exploration mode')">Help</button>
   </div>
+
+  <!-- Build panel (confirm dialog for placing drills) -->
+  <div id="build-panel" style="
+    display: none;
+    position: fixed;
+    background: rgba(10,22,40,0.95);
+    border: 1px solid rgba(100,181,246,0.4);
+    border-radius: 8px;
+    padding: 12px 16px;
+    z-index: 200;
+    min-width: 200px;
+    backdrop-filter: blur(4px);
+  ">
+    <div id="build-target-name" style="font-weight:600; color:#64b5f6; margin-bottom:8px;"></div>
+    <div id="build-options-container"></div>
+  </div>
+
+  <style>
+    .build-info {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+    .build-option {
+      width: 100%;
+      text-align: left;
+    }
+  </style>
 
   <script src="bundle.js"></script>
 </body>
