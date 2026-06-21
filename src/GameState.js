@@ -4,8 +4,10 @@
  */
 class GameState {
   constructor() {
-    this.view = 'galaxy'; // 'galaxy' | 'planet'
-    this.selectedPlanetId = null;
+    // FIX #2: Start in PLANET view, not galaxy view
+    this.view = 'planet'; // 'galaxy' | 'planet'
+    this.selectedPlanetId = 0; // Start on first planet (starter planet)
+    this.starterPlanetId = 0; // Reference to home planet
     
     // Player inventory
     this.inventory = {
@@ -24,11 +26,17 @@ class GameState {
       stoneDrill: 0,
       ironDrill: 0,
       autoExtractor: 0,
-      droneMiner: 0
+      droneMiner: 0,
+      radar: 0 // FIX #3: Radar building unlocks scanning
     };
 
     // Planets data (seeded and persisted)
     this.planets = this.generateGalaxy();
+    
+    // FIX #3: Radar scan data - which planets are visible
+    this.scannedPlanets = new Set([0]); // Start with only starter planet visible
+    this.radarRange = 300; // Distance in space units
+    this.radarBuilt = false; // Whether radar is built
   }
 
   /**
@@ -126,6 +134,63 @@ class GameState {
   getCurrentPlanet() {
     if (this.selectedPlanetId === null) return null;
     return this.planets[this.selectedPlanetId];
+  }
+
+  /**
+   * FIX #3: Check if a planet is visible on the galaxy map
+   */
+  isPlanetScanned(planetId) {
+    return this.scannedPlanets.has(planetId);
+  }
+
+  /**
+   * FIX #3: Build radar on starter planet to scan nearby planets
+   */
+  buildRadar() {
+    if (this.radarBuilt) return false;
+    if (this.inventory.gold < 50 || this.inventory.platinum < 25) return false;
+
+    // Deduct resources
+    this.inventory.gold -= 50;
+    this.inventory.platinum -= 25;
+    this.radarBuilt = true;
+    this.tech.radar = 1;
+
+    // Scan all planets within range
+    this.updateRadarScan();
+    return true;
+  }
+
+  /**
+   * FIX #3: Update which planets are visible based on radar range
+   */
+  updateRadarScan() {
+    const starter = this.planets[this.starterPlanetId];
+    
+    for (let i = 0; i < this.planets.length; i++) {
+      const planet = this.planets[i];
+      const distance = Math.hypot(
+        planet.x - starter.x,
+        planet.y - starter.y,
+        planet.z - starter.z
+      );
+
+      if (distance <= this.radarRange || i === this.starterPlanetId) {
+        this.scannedPlanets.add(i);
+      }
+    }
+  }
+
+  /**
+   * Get all visible planets for galaxy rendering
+   */
+  getVisiblePlanets() {
+    if (!this.radarBuilt) {
+      // Only show starter planet until radar is built
+      return [this.planets[this.starterPlanetId]];
+    }
+    // Show all scanned planets
+    return this.planets.filter((_, idx) => this.scannedPlanets.has(idx));
   }
 
   /**

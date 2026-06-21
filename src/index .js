@@ -28,14 +28,16 @@ class Game {
   }
 
   init() {
-    // Render initial state
-    this.render();
+    // FIX #2: Game should start in PLANET view on starter planet
+    // Don't render galaxy initially - go straight to planet
+    this.renderPlanet();
     this.updateHUD();
 
     // Handle keyboard
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.back();
       if (e.key === 'e' || e.key === 'E') this.toggleExploration();
+      if (e.key === 'r' || e.key === 'R') this.tryBuildRadar();
     });
 
     // Start game loop
@@ -57,7 +59,21 @@ class Game {
   }
 
   /**
+   * Render planet view (THREE.js 3D)
+   * FIX #2: Called on startup and when zooming in
+   */
+  renderPlanet() {
+    this.gameState.view = 'planet';
+    this.zoomBtn.style.display = 'none';
+    this.backBtn.style.display = 'block';
+    const planet = this.gameState.planets[this.gameState.selectedPlanetId];
+    if (planet) planet.visited = true;
+    this.planetView.init(this.gameState.selectedPlanetId);
+  }
+
+  /**
    * Zoom into selected planet
+   * FIX #2: Properly transition from galaxy to planet view
    */
   zoom() {
     if (this.gameState.selectedPlanetId === null) {
@@ -65,14 +81,27 @@ class Game {
       return;
     }
 
-    this.gameState.view = 'planet';
-    const planet = this.gameState.planets[this.gameState.selectedPlanetId];
-    planet.visited = true;
-
-    this.zoomBtn.style.display = 'none';
-    this.backBtn.style.display = 'block';
-    this.planetView.init(this.gameState.selectedPlanetId);
+    this.renderPlanet();
     this.updateHUD();
+  }
+
+  /**
+   * Try to build radar on starter planet
+   * Press R to build after collecting enough resources
+   */
+  tryBuildRadar() {
+    if (this.gameState.radarBuilt) {
+      console.log('Radar already built');
+      return;
+    }
+
+    const success = this.gameState.buildRadar();
+    if (success) {
+      console.log('Radar built! Scanning nearby planets...');
+      this.updateHUD();
+    } else {
+      console.log('Need: 50 Gold + 25 Platinum to build Radar');
+    }
   }
 
   /**
