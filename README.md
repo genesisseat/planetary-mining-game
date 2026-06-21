@@ -1,0 +1,2 @@
+# planetary-mining-game
+SpaceGame
